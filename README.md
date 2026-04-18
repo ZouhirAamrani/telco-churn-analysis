@@ -26,7 +26,10 @@ L'objectif est double :
 - **Business** : identifier les facteurs clés du churn et formuler des recommandations actionnables
 
 ---
+## 📊 Base de données
 
+La base de données provient de :
+- [Telco Customer Churn sur Kaggle](https://www.kaggle.com/datasets/blastchar/telco-customer-churn/data)
 ## 🗂️ Structure du projet
 
 ```
