@@ -1,0 +1,15 @@
+# Données volumineuses
+data/
+
+# Outputs
+outputs/
+models/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# R
+.Rhistory
+.RData
+.Rproj.user

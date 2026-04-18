@@ -1,0 +1,883 @@
+---
+title: "Analyse Complète du Churn - Telco Customer"
+author: "AAMRANI ZOUHIR"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 3
+    keep_tex: false
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    df_print: paged
+geometry: margin=1in
+header-includes:
+  - \usepackage{float}
+  - \usepackage{graphicx}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = 'center',
+  fig.pos = 'H',  # Force figure position
+  out.width = '100%',
+  dev = 'png',
+  dpi = 300
+)
+```
+
+# Introduction
+
+Ce document présente une analyse complète du dataset **Telco Customer Churn**, incluant :
+
+1. **Analyse Exploratoire des Données (EDA)**
+2. **Preprocessing et préparation des données**
+3. **Modélisation avec Régression Logistique**
+
+---
+
+# 1. Configuration de l'Environnement
+
+```{r libraries}
+# Installation des packages (si nécessaire)
+packages <- c("dplyr", "ggplot2", "readr", "tidyverse", "skimr",
+              "DataExplorer", "corrplot", "gridExtra", "infotheo",
+              "caret", "glmnet", "pROC", "ROCR", "broom")
+
+# Installer les packages manquants
+new_packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages, repos = "http://cran.us.r-project.org")
+
+# Charger les bibliothèques
+invisible(lapply(packages, library, character.only = TRUE))
+
+# Configuration
+options(scipen = 999)
+set.seed(123)
+
+# Créer les dossiers nécessaires
+dir.create("data", showWarnings = FALSE)
+dir.create("outputs", showWarnings = FALSE)
+dir.create("models", showWarnings = FALSE)
+
+cat("✓ Environnement configuré avec succès\n")
+```
+
+---
+
+# 2. Chargement des Données
+
+```{r load_data}
+# Charger le dataset (adapter le chemin selon votre configuration)
+df <- read.csv('data/WA_Fn-UseC_-Telco-Customer-Churn.csv')
+
+# Aperçu initial
+cat("Dimensions du dataset:", dim(df), "\n")
+cat("Nombre de variables:", ncol(df), "\n")
+cat("Nombre d'observations:", nrow(df), "\n\n")
+
+# Structure
+str(df)
+```
+
+```{r head_tail}
+# Premières et dernières lignes
+head(df, 3)
+tail(df, 3)
+```
+
+---
+
+# 3. Analyse Exploratoire des Données (EDA)
+
+## 3.1 Nettoyage Initial
+
+```{r cleaning}
+# Suppression de customerID
+df <- df %>% select(-customerID)
+
+# Conversion de SeniorCitizen en facteur
+df <- df %>% mutate(SeniorCitizen = as.factor(SeniorCitizen))
+
+# Standardisation des noms de colonnes
+df <- df %>% rename_with(tolower)
+
+# Vérification des valeurs manquantes
+cat("Valeurs manquantes par colonne:\n")
+colSums(is.na(df))
+```
+
+```{r handle_missing}
+# Analyse de TotalCharges
+cat("\nStatistiques de totalcharges:\n")
+summary(df$totalcharges)
+
+# Lignes avec tenure = 0 et NA
+cat("\nLignes avec tenure = 0 et totalcharges NA:\n")
+df %>% filter(tenure == 0 & is.na(totalcharges)) %>% nrow()
+
+# Imputation par la médiane
+df <- df %>%
+  mutate(totalcharges = replace_na(totalcharges, median(totalcharges, na.rm = TRUE)))
+
+cat("\nNA après imputation:", sum(is.na(df$totalcharges)), "\n")
+
+# Suppression des doublons
+cat("Doublons avant:", sum(duplicated(df)), "\n")
+df <- df %>% distinct()
+cat("Doublons après:", sum(duplicated(df)), "\n")
+```
+
+\newpage
+
+## 3.2 Distribution de la Variable Cible
+
+```{r churn_distribution, fig.cap="Distribution du Churn dans le dataset"}
+# Distribution du Churn
+churn_table <- table(df$churn)
+churn_prop <- prop.table(churn_table) * 100
+
+cat("Distribution du Churn:\n")
+print(churn_table)
+cat("\nProportions (%):\n")
+print(round(churn_prop, 2))
+
+# Visualisation
+ggplot(df, aes(x = churn, fill = churn)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = 'count', aes(label = after_stat(count)), vjust = -0.5) +
+  scale_fill_manual(values = c("No" = "#2ecc71", "Yes" = "#e74c3c")) +
+  labs(
+    title = "Distribution du Churn",
+    subtitle = paste0("Taux de churn: ", round(churn_prop[2], 1), "%"),
+    x = "Churn", 
+    y = "Nombre de clients"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12)
+  )
+
+# Conversion en valeur numérique
+df <- df %>% mutate(churn_numeric = as.integer(churn == "Yes"))
+```
+
+## 3.3 Variables Catégorielles et Numériques
+
+```{r define_variables}
+# Définition des types de variables
+categorical <- c("gender", "seniorcitizen", "partner", "dependents", 
+                 "phoneservice", "multiplelines", "internetservice",
+                 "onlinesecurity", "onlinebackup", "deviceprotection",
+                 "techsupport", "streamingtv", "streamingmovies",
+                 "contract", "paperlessbilling", "paymentmethod")
+
+numerical <- c("tenure", "monthlycharges", "totalcharges")
+
+cat("Variables catégorielles:", length(categorical), "\n")
+cat("Variables numériques:", length(numerical), "\n")
+```
+
+\newpage
+
+## 3.4 Analyse Univariée - Variables Numériques
+
+```{r numerical_stats}
+# Statistiques descriptives
+df %>%
+  select(all_of(numerical)) %>%
+  summary()
+```
+
+```{r numerical_histograms, fig.height=5, fig.cap="Distributions des variables numériques"}
+# Histogrammes
+for (var in numerical) {
+  p <- ggplot(df, aes(x = .data[[var]])) +
+    geom_histogram(bins = 30, fill = "#3498db", alpha = 0.7, color = "black") +
+    labs(
+      title = paste("Distribution de", var),
+      x = var,
+      y = "Fréquence"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  
+  print(p)
+  cat("\n\n")
+}
+```
+
+```{r numerical_boxplots, fig.height=4, fig.cap="Boxplots des variables numériques"}
+# Boxplots
+for (var in numerical) {
+  p <- ggplot(df, aes(y = .data[[var]])) +
+    geom_boxplot(fill = "#3498db", alpha = 0.7) +
+    labs(
+      title = paste("Boxplot de", var),
+      y = var
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  
+  print(p)
+  cat("\n\n")
+}
+```
+
+\newpage
+
+## 3.5 Analyse Bivariée - Churn vs Variables Catégorielles
+
+```{r categorical_churn_rate, fig.height=5, fig.cap="Taux de churn par variables catégorielles"}
+# Taux de churn global
+global_mean <- mean(df$churn_numeric, na.rm = TRUE)
+cat("Taux de churn global:", round(global_mean * 100, 2), "%\n\n")
+
+# Analyse pour les variables les plus importantes
+top_vars <- c("contract", "internetservice", "techsupport", "paymentmethod")
+
+for (feature in top_vars) {
+  df_group <- df %>%
+    group_by(!!sym(feature)) %>%
+    summarise(
+      n = n(),
+      churn_rate = mean(churn_numeric, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      risk_ratio = churn_rate / global_mean,
+      churn_pct = round(churn_rate * 100, 2)
+    ) %>%
+    arrange(desc(risk_ratio))
+  
+  cat("\n", toupper(feature), ":\n")
+  print(df_group)
+  
+  # Visualisation
+  p <- ggplot(df_group, aes(x = !!sym(feature), y = churn_rate)) +
+    geom_col(fill = "#3498db", alpha = 0.8) +
+    geom_hline(yintercept = global_mean, linewidth = 1.2, 
+               color = "#e74c3c", linetype = "dashed") +
+    annotate("text", x = 1, y = global_mean + 0.03, 
+             label = "Taux global", color = "#e74c3c", fontface = "bold") +
+    scale_y_continuous(labels = scales::percent) +
+    labs(
+      title = paste("Taux de Churn par", feature),
+      x = feature,
+      y = "Taux de Churn"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+  
+  print(p)
+  cat("\n\n")
+}
+```
+
+\newpage
+
+## 3.6 Analyse Bivariée - Churn vs Variables Numériques
+
+```{r numerical_by_churn}
+# Statistiques par groupe
+df %>%
+  group_by(churn) %>%
+  summarise(
+    across(all_of(numerical),
+           list(mean = mean, median = median, sd = sd),
+           .names = "{.col}_{.fn}")
+  )
+```
+
+```{r numerical_boxplots_by_churn, fig.height=5, fig.cap="Variables numériques par statut de churn"}
+# Boxplots par churn
+for (var in numerical) {
+  p <- ggplot(df, aes(x = churn, y = .data[[var]], fill = churn)) +
+    geom_boxplot(alpha = 0.7) +
+    scale_fill_manual(values = c("No" = "#2ecc71", "Yes" = "#e74c3c")) +
+    labs(
+      title = paste(var, "par Churn"),
+      x = "Churn",
+      y = var
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "none"
+    )
+  
+  print(p)
+  cat("\n\n")
+}
+```
+
+```{r density_plots, fig.height=5, fig.cap="Distributions de densité par statut de churn"}
+# Density plots
+for (var in numerical) {
+  p <- ggplot(df, aes(x = .data[[var]], fill = churn)) +
+    geom_density(alpha = 0.5) +
+    scale_fill_manual(values = c("No" = "#2ecc71", "Yes" = "#e74c3c")) +
+    labs(
+      title = paste("Densité de", var, "par Churn"),
+      x = var,
+      y = "Densité",
+      fill = "Churn"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "top"
+    )
+  
+  print(p)
+  cat("\n\n")
+}
+```
+
+\newpage
+
+## 3.7 Corrélations
+
+```{r correlation_matrix, fig.height=6, fig.cap="Matrice de corrélation des variables numériques"}
+# Matrice de corrélation (variables numériques + churn)
+cor_with_churn <- cor(df %>% select(all_of(numerical), churn_numeric), 
+                      use = "complete.obs")
+
+# Visualisation
+corrplot(cor_with_churn, 
+         method = "color",
+         addCoef.col = "black",
+         tl.col = "black",
+         tl.srt = 45,
+         title = "Matrice de Corrélation (avec Churn)",
+         mar = c(0, 0, 2, 0),
+         number.cex = 1)
+```
+
+```{r correlation_barplot, fig.cap="Corrélation des variables numériques avec le churn"}
+# Corrélation avec churn
+correlations <- sapply(numerical, function(var) {
+  cor(df[[var]], df$churn_numeric, use = "complete.obs")
+})
+
+df_cor <- data.frame(
+  Feature = names(correlations),
+  Correlation = correlations,
+  AbsCorrelation = abs(correlations)
+) %>%
+  arrange(desc(AbsCorrelation))
+
+# Visualisation
+ggplot(df_cor, aes(x = reorder(Feature, AbsCorrelation), y = Correlation)) +
+  geom_bar(stat = "identity", 
+           aes(fill = Correlation > 0), 
+           alpha = 0.8) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("TRUE" = "#e74c3c", "FALSE" = "#2ecc71"),
+    labels = c("Négative", "Positive")
+  ) +
+  labs(
+    title = "Corrélation avec Churn (Variables Numériques)",
+    x = "Variables",
+    y = "Coefficient de Corrélation",
+    fill = "Type"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    legend.position = "bottom"
+  )
+```
+
+\newpage
+
+## 3.8 Importance des Variables (Mutual Information)
+
+```{r mutual_information, fig.cap="Importance des variables catégorielles (Mutual Information)"}
+# Calcul de l'information mutuelle
+mi_results <- sapply(categorical, function(feature) {
+  mutinformation(df[[feature]], df$churn)
+})
+
+df_mi <- data.frame(
+  Feature = names(mi_results),
+  MI = mi_results,
+  row.names = NULL
+) %>%
+  arrange(desc(MI))
+
+# Top 10
+cat("Top 10 variables par Mutual Information:\n")
+print(head(df_mi, 10))
+
+# Visualisation
+ggplot(df_mi, aes(x = reorder(Feature, MI), y = MI)) +
+  geom_bar(stat = "identity", fill = "#9b59b6", alpha = 0.8) +
+  coord_flip() +
+  labs(
+    title = "Importance des Variables (Mutual Information)",
+    x = "Variables",
+    y = "Mutual Information"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)
+  )
+```
+
+---
+
+# 4. Preprocessing des Données
+
+## 4.1 Préparation pour le Split
+
+```{r preprocessing_prep}
+# Convertir les variables catégorielles en facteurs
+df <- df %>%
+  mutate(across(all_of(categorical), as.factor))
+
+# Convertir churn en facteur
+df <- df %>%
+  mutate(churn = as.factor(churn))
+
+cat("Données prêtes pour le split\n")
+cat("Dimensions finales:", dim(df), "\n")
+```
+
+## 4.2 Split Train / Validation / Test
+
+```{r data_split}
+# Split 70% Train / 15% Validation / 15% Test
+set.seed(123)
+train_index <- createDataPartition(df$churn, p = 0.70, list = FALSE)
+
+train_raw <- df[train_index, ]
+temp_set <- df[-train_index, ]
+
+# Split Validation / Test
+set.seed(123)
+val_index <- createDataPartition(temp_set$churn, p = 0.50, list = FALSE)
+
+validation_raw <- temp_set[val_index, ]
+test_raw <- temp_set[-val_index, ]
+
+# Vérification des proportions
+cat("Distribution des ensembles:\n")
+cat("  Train:", nrow(train_raw), "(", round(nrow(train_raw)/nrow(df)*100, 1), "%)\n")
+cat("  Validation:", nrow(validation_raw), "(", round(nrow(validation_raw)/nrow(df)*100, 1), "%)\n")
+cat("  Test:", nrow(test_raw), "(", round(nrow(test_raw)/nrow(df)*100, 1), "%)\n\n")
+
+cat("Distribution du Churn:\n")
+cat("  Train:", round(prop.table(table(train_raw$churn))*100, 1), "%\n")
+cat("  Validation:", round(prop.table(table(validation_raw$churn))*100, 1), "%\n")
+cat("  Test:", round(prop.table(table(test_raw$churn))*100, 1), "%\n")
+```
+
+## 4.3 One-Hot Encoding
+
+```{r one_hot_encoding}
+# FIT: Créer le modèle d'encoding sur TRAIN uniquement
+dummy_model <- dummyVars(~ ., 
+                         data = train_raw %>% select(all_of(categorical)), 
+                         fullRank = TRUE)
+
+# TRANSFORM: Appliquer sur les 3 ensembles
+train_dummy <- predict(dummy_model, 
+                       newdata = train_raw %>% select(all_of(categorical))) %>%
+  as.data.frame()
+
+validation_dummy <- predict(dummy_model, 
+                            newdata = validation_raw %>% select(all_of(categorical))) %>%
+  as.data.frame()
+
+test_dummy <- predict(dummy_model, 
+                      newdata = test_raw %>% select(all_of(categorical))) %>%
+  as.data.frame()
+
+cat("One-Hot Encoding terminé -", ncol(train_dummy), "features créées\n")
+```
+
+## 4.4 Scaling des Variables Numériques
+
+```{r scaling}
+# FIT: Calculer les paramètres sur TRAIN uniquement
+preproc_model <- preProcess(
+  train_raw %>% select(all_of(numerical)),
+  method = c("center", "scale")
+)
+
+cat("Paramètres de scaling (appris sur Train):\n")
+cat("  Moyennes:", round(preproc_model$mean, 2), "\n")
+cat("  Écarts-types:", round(preproc_model$std, 2), "\n\n")
+
+# TRANSFORM: Appliquer sur les 3 ensembles
+train_scaled <- predict(preproc_model, 
+                        train_raw %>% select(all_of(numerical))) %>%
+  as.data.frame()
+
+validation_scaled <- predict(preproc_model, 
+                             validation_raw %>% select(all_of(numerical))) %>%
+  as.data.frame()
+
+test_scaled <- predict(preproc_model, 
+                       test_raw %>% select(all_of(numerical))) %>%
+  as.data.frame()
+
+cat("Scaling terminé\n")
+```
+
+## 4.5 Combinaison Finale
+
+```{r combine_features}
+# Combiner toutes les features
+train_set <- bind_cols(
+  train_scaled,
+  train_dummy,
+  train_raw %>% select(churn)
+)
+
+validation_set <- bind_cols(
+  validation_scaled,
+  validation_dummy,
+  validation_raw %>% select(churn)
+)
+
+test_set <- bind_cols(
+  test_scaled,
+  test_dummy,
+  test_raw %>% select(churn)
+)
+
+cat("Ensembles finaux:\n")
+cat("  Train:", dim(train_set), "\n")
+cat("  Validation:", dim(validation_set), "\n")
+cat("  Test:", dim(test_set), "\n\n")
+
+# Vérification du scaling sur Train (doit être ~0 et ~1)
+cat("Vérification du scaling sur TRAIN:\n")
+train_set %>% 
+  select(all_of(numerical)) %>%
+  summarise(across(everything(), list(mean = ~round(mean(.), 6), sd = ~round(sd(.), 3))))
+```
+
+## 4.6 Séparation X et y
+
+```{r separate_xy}
+# Train
+X_train <- train_set %>% select(-churn)
+y_train <- train_set$churn
+
+# Validation
+X_validation <- validation_set %>% select(-churn)
+y_validation <- validation_set$churn
+
+# Test
+X_test <- test_set %>% select(-churn)
+y_test <- test_set$churn
+
+cat("Matrices finales:\n")
+cat("  X_train:", dim(X_train), "| y_train:", length(y_train), "\n")
+cat("  X_validation:", dim(X_validation), "| y_validation:", length(y_validation), "\n")
+cat("  X_test:", dim(X_test), "| y_test:", length(y_test), "\n")
+```
+
+\newpage
+
+---
+
+# 5. Modélisation - Régression Logistique
+
+## 5.1 Entraînement du Modèle
+
+```{r train_model}
+# Conversion en matrices
+X_train_matrix <- as.matrix(X_train)
+X_val_matrix <- as.matrix(X_validation)
+X_test_matrix <- as.matrix(X_test)
+
+# Modèle de base (sans régularisation)
+cat("Entraînement du modèle de Régression Logistique...\n")
+
+logistic_model <- glmnet(
+  X_train_matrix, 
+  y_train, 
+  family = "binomial",
+  alpha = 0,
+  lambda = 0
+)
+
+cat("✓ Modèle entraîné avec succès\n")
+```
+
+## 5.2 Prédictions
+
+```{r predictions}
+# Seuil de décision
+THRESHOLD <- 0.5
+
+# Prédictions (probabilités)
+pred_train_prob <- predict(logistic_model, newx = X_train_matrix, type = "response")[, 1]
+pred_validation_prob <- predict(logistic_model, newx = X_val_matrix, type = "response")[, 1]
+pred_test_prob <- predict(logistic_model, newx = X_test_matrix, type = "response")[, 1]
+
+# Conversion en classes
+pred_train_class <- factor(ifelse(pred_train_prob > THRESHOLD, "Yes", "No"), levels = c("No", "Yes"))
+pred_validation_class <- factor(ifelse(pred_validation_prob > THRESHOLD, "Yes", "No"), levels = c("No", "Yes"))
+pred_test_class <- factor(ifelse(pred_test_prob > THRESHOLD, "Yes", "No"), levels = c("No", "Yes"))
+
+cat("Prédictions générées (seuil =", THRESHOLD, ")\n")
+cat("  Exemple de probabilités (Test):", round(head(pred_test_prob, 5), 3), "\n")
+```
+
+\newpage
+
+## 5.3 Évaluation - Matrice de Confusion
+
+```{r confusion_matrix, fig.cap="Matrice de confusion - Test Set"}
+# Matrices de confusion
+cm_train <- confusionMatrix(pred_train_class, y_train, positive = "Yes")
+cm_validation <- confusionMatrix(pred_validation_class, y_validation, positive = "Yes")
+cm_test <- confusionMatrix(pred_test_class, y_test, positive = "Yes")
+
+cat("MATRICE DE CONFUSION - TRAIN:\n")
+print(cm_train$table)
+
+cat("\nMATRICE DE CONFUSION - VALIDATION:\n")
+print(cm_validation$table)
+
+cat("\nMATRICE DE CONFUSION - TEST:\n")
+print(cm_test$table)
+
+# Visualisation (Test)
+cm_test_df <- as.data.frame(cm_test$table)
+
+ggplot(cm_test_df, aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile(color = "white", size = 1.5) +
+  geom_text(aes(label = Freq), color = "white", size = 8, fontface = "bold") +
+  scale_fill_gradient(low = "#3498db", high = "#e74c3c") +
+  labs(
+    title = "Matrice de Confusion - Test Set",
+    subtitle = paste0("Accuracy: ", round(cm_test$overall['Accuracy'], 3)),
+    x = "Prédiction",
+    y = "Réalité"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 11),
+    legend.position = "none"
+  )
+```
+
+## 5.4 Métriques de Performance
+
+```{r performance_metrics}
+# Extraction des métriques
+extract_metrics <- function(cm) {
+  data.frame(
+    Accuracy = cm$overall['Accuracy'],
+    Precision = cm$byClass['Pos Pred Value'],
+    Recall = cm$byClass['Sensitivity'],
+    Specificity = cm$byClass['Specificity'],
+    F1_Score = cm$byClass['F1'],
+    Balanced_Accuracy = cm$byClass['Balanced Accuracy']
+  )
+}
+
+metrics_train <- extract_metrics(cm_train)
+metrics_validation <- extract_metrics(cm_validation)
+metrics_test <- extract_metrics(cm_test)
+
+metrics_comparison <- rbind(
+  cbind(Set = "Train", metrics_train),
+  cbind(Set = "Validation", metrics_validation),
+  cbind(Set = "Test", metrics_test)
+)
+
+rownames(metrics_comparison) <- NULL
+
+cat("COMPARAISON DES MÉTRIQUES:\n")
+print(metrics_comparison %>% mutate(across(where(is.numeric), ~ round(.x, 4))))
+```
+
+\newpage
+
+## 5.5 Courbe ROC et AUC
+
+```{r roc_curve, fig.cap="Courbes ROC pour les trois ensembles"}
+# Calcul des courbes ROC
+roc_train <- roc(y_train, pred_train_prob, levels = c("No", "Yes"), direction = "<")
+roc_validation <- roc(y_validation, pred_validation_prob, levels = c("No", "Yes"), direction = "<")
+roc_test <- roc(y_test, pred_test_prob, levels = c("No", "Yes"), direction = "<")
+
+auc_train <- auc(roc_train)
+auc_validation <- auc(roc_validation)
+auc_test <- auc(roc_test)
+
+cat("AUC SCORES:\n")
+cat("  Train:", round(auc_train, 4), "\n")
+cat("  Validation:", round(auc_validation, 4), "\n")
+cat("  Test:", round(auc_test, 4), "\n")
+
+# Visualisation
+roc_data <- data.frame(
+  FPR = c(1 - roc_train$specificities, 
+          1 - roc_validation$specificities, 
+          1 - roc_test$specificities),
+  TPR = c(roc_train$sensitivities, 
+          roc_validation$sensitivities, 
+          roc_test$sensitivities),
+  Set = rep(c("Train", "Validation", "Test"), 
+            c(length(roc_train$specificities), 
+              length(roc_validation$specificities), 
+              length(roc_test$specificities)))
+)
+
+ggplot(roc_data, aes(x = FPR, y = TPR, color = Set)) +
+  geom_line(size = 1.3) +
+  geom_abline(linetype = "dashed", color = "gray50", size = 0.8) +
+  labs(
+    title = "Courbe ROC - Régression Logistique",
+    subtitle = paste0("AUC - Train: ", round(auc_train, 3), 
+                      " | Validation: ", round(auc_validation, 3),
+                      " | Test: ", round(auc_test, 3)),
+    x = "Taux de Faux Positifs (1 - Specificité)",
+    y = "Taux de Vrais Positifs (Sensibilité / Recall)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 11),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_manual(values = c("Train" = "#3498db", 
+                                "Validation" = "#f39c12", 
+                                "Test" = "#e74c3c"))
+```
+
+\newpage
+
+## 5.6 Feature Importance
+
+```{r feature_importance, fig.cap="Top 15 features les plus importantes"}
+# Extraction des coefficients
+coefficients <- coef(logistic_model) %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Feature") %>%
+  rename(Coefficient = s0) %>%
+  filter(Feature != "(Intercept)") %>%
+  mutate(
+    Abs_Coefficient = abs(Coefficient),
+    Direction = ifelse(Coefficient > 0, "Positive", "Negative")
+  ) %>%
+  arrange(desc(Abs_Coefficient))
+
+cat("TOP 10 FEATURES LES PLUS IMPORTANTES:\n")
+print(coefficients %>% head(10) %>% select(Feature, Coefficient, Direction))
+
+# Visualisation (Top 15)
+top_features <- coefficients %>% head(15)
+
+ggplot(top_features, aes(x = reorder(Feature, Abs_Coefficient), 
+                         y = Coefficient, 
+                         fill = Direction)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top 15 Features - Importance",
+    subtitle = "Basé sur les coefficients du modèle",
+    x = "Feature",
+    y = "Coefficient"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 11),
+    legend.position = "bottom"
+  ) +
+  scale_fill_manual(values = c("Positive" = "#27ae60", "Negative" = "#e74c3c"))
+```
+
+---
+
+# 6. Sauvegarde des Résultats
+
+```{r save_results}
+# Sauvegarder le modèle
+saveRDS(logistic_model, "models/logistic_model.rds")
+
+# Sauvegarder les transformers
+saveRDS(preproc_model, "models/scaler_model.rds")
+saveRDS(dummy_model, "models/dummy_model.rds")
+
+# Sauvegarder les métriques
+write.csv(metrics_comparison, "outputs/performance_metrics.csv", row.names = FALSE)
+
+# Sauvegarder les coefficients
+write.csv(coefficients, "outputs/model_coefficients.csv", row.names = FALSE)
+
+cat("✓ Tous les résultats ont été sauvegardés\n")
+cat("  - Modèle: models/logistic_model.rds\n")
+cat("  - Métriques: outputs/performance_metrics.csv\n")
+cat("  - Coefficients: outputs/model_coefficients.csv\n")
+```
+
+\newpage
+
+---
+
+# 7. Conclusions et Insights Clés
+
+```{r conclusions}
+
+cat("                          RÉSUMÉ DE L'ANALYSE                                 \n")
+
+cat("PERFORMANCE DU MODÈLE (Test Set):\n")
+cat("  - Accuracy:", round(cm_test$overall['Accuracy'], 4), "\n")
+cat("  - Precision:", round(cm_test$byClass['Pos Pred Value'], 4), "\n")
+cat("  - Recall:", round(cm_test$byClass['Sensitivity'], 4), "\n")
+cat("  - F1-Score:", round(cm_test$byClass['F1'], 4), "\n")
+cat("  - AUC:", round(auc_test, 4), "\n\n")
+
+cat("INSIGHTS CLÉS:\n")
+cat("  1. CONTRACT - Variable la plus importante (Month-to-month = risque élevé)\n")
+cat("  2. INTERNET SERVICE - Fiber optic associé à un taux de churn plus élevé\n")
+cat("  3. TENURE - Corrélation négative forte avec le churn\n")
+cat("  4. SERVICES ADDITIONNELS - Absence = risque de churn accru\n")
+cat("  5. PAYMENT METHOD - Electronic check = taux de churn élevé\n\n")
+
+cat("RECOMMANDATIONS:\n")
+cat("  1. Proposer des contrats longue durée avec des incitations\n")
+cat("  2. Améliorer la qualité du service Fiber optic\n")
+cat("  3. Programmes de fidélisation pour nouveaux clients (tenure faible)\n")
+cat("  4. Promouvoir les services de sécurité/backup\n")
+cat("  5. Encourager d'autres méthodes de paiement\n\n")
+
+cat("================================================================================\n")
+```
+
+---
+
+# Annexe: Informations de Session
+
+```{r session_info}
+sessionInfo()
+```
