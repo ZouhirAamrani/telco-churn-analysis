@@ -1,4 +1,4 @@
-# 📉 Analyse Complète du Churn — Telco Customer Dataset
+# Analyse Complète du Churn — Telco Customer Dataset
 
 > Prédiction du désabonnement client par classification supervisée et régression logistique  
 > **Faculté des Sciences Dhar El Mahraz — Université Sidi Mohamed Ben Abdallah**  
@@ -6,7 +6,7 @@
 
 ---
 
-## 👥 Auteurs
+## Auteurs
 
 | Nom | Rôle |
 |-----|------|
@@ -17,7 +17,7 @@
 
 ---
 
-## 📋 Description du projet
+## Description du projet
 
 Ce projet vise à prédire le **churn client** (désabonnement) dans le secteur des télécommunications à l'aide d'un modèle de **régression logistique**. Il s'appuie sur le dataset public *Telco Customer Churn* d'IBM Watson Analytics (7 043 observations, 21 variables).
 
@@ -26,11 +26,13 @@ L'objectif est double :
 - **Business** : identifier les facteurs clés du churn et formuler des recommandations actionnables
 
 ---
-## 📊 Base de données
+## Base de données
 
 La base de données provient de :
 - [Telco Customer Churn sur Kaggle](https://www.kaggle.com/datasets/blastchar/telco-customer-churn/data)
-## 🗂️ Structure du projet
+
+---
+## Structure du projet
 
 ```
 projet/
@@ -53,7 +55,7 @@ projet/
 
 ---
 
-## ⚙️ Environnement technique
+## Environnement technique
 
 - **Langage :** R 4.3.1
 - **Packages principaux :**
@@ -69,7 +71,7 @@ projet/
 
 ---
 
-## 🚀 Lancer le projet
+## Lancer le projet
 
 ```r
 # 1. Installer les dépendances
@@ -84,19 +86,19 @@ install.packages(packages)
 
 ---
 
-## 📊 Résultats du modèle (Test Set)
+## Résultats du modèle (Test Set)
 
 | Métrique | Résultat | Objectif | Statut |
 |----------|----------|----------|--------|
-| AUC-ROC | **0.8389** | > 0.75 | ✅ Atteint |
-| Accuracy | **79.20%** | — | ✅ Bonne |
-| F1-Score | **59.24%** | > 0.60 | 🟡 Proche |
-| Recall | **56.80%** | > 0.70 | ❌ À améliorer |
-| Écart Train/Test | **1.25%** | < 5% | ✅ Pas d'overfitting |
+| AUC-ROC | **0.8389** | > 0.75 | Atteint |
+| Accuracy | **79.20%** | — | Bonne |
+| F1-Score | **59.24%** | > 0.60 | Proche |
+| Recall | **56.80%** | > 0.70 | À améliorer |
+| Écart Train/Test | **1.25%** | < 5% | Pas d'overfitting |
 
 ---
 
-## 🔑 Insights clés
+## Insights clés
 
 - **Type de contrat** : les clients *month-to-month* churned à 42.7% vs 2.8% pour les contrats 2 ans (×15)
 - **Service Fiber optic** : taux de churn de 41.9% — problème de qualité ou de prix perçu
@@ -106,7 +108,7 @@ install.packages(packages)
 
 ---
 
-## 💡 Recommandations stratégiques
+## Recommandations stratégiques
 
 1. **Proposer des contrats longue durée** avec réductions (-15% à -25%) et avantages exclusifs
 2. **Auditer et améliorer** la qualité du service Fiber optic
@@ -116,7 +118,7 @@ install.packages(packages)
 
 ---
 
-## ⚠️ Limitations
+## Limitations
 
 - Dataset fictif (IBM) — validation sur données réelles recommandée
 - Régression logistique : relations supposées linéaires ; des modèles non-linéaires (Random Forest, XGBoost) pourraient améliorer le Recall
@@ -124,7 +126,7 @@ install.packages(packages)
 
 ---
 
-## 📚 Références principales
+## Références principales
 
 - Hastie, Tibshirani & Friedman (2009) — *The Elements of Statistical Learning*
 - James et al. (2013) — *An Introduction to Statistical Learning with Applications in R*
